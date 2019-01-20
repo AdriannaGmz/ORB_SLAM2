@@ -23,7 +23,9 @@
 #include<algorithm>
 #include<fstream>
 #include<chrono>
-#include<iomanip>
+
+//#include <iostream>     // std::cout, std::endl
+#include <iomanip>      // std::setfill, std::setw
 
 #include<opencv2/core/core.hpp>
 

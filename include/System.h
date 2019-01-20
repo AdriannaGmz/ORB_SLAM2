@@ -26,6 +26,15 @@
 #include<thread>
 #include<opencv2/core/core.hpp>
 
+#include <boost/serialization/serialization.hpp>
+#include <boost/archive/binary_oarchive.hpp>
+#include <boost/archive/binary_iarchive.hpp>
+#include <boost/serialization/list.hpp>
+#include <boost/serialization/vector.hpp>
+
+#include <cstdio>
+#include <cstdlib>
+
 #include "Tracking.h"
 #include "FrameDrawer.h"
 #include "MapDrawer.h"
@@ -36,6 +45,17 @@
 #include "ORBVocabulary.h"
 #include "Viewer.h"
 
+typedef struct{
+
+   float x;
+   float y;
+   float z;
+}my_point;
+
+typedef struct{
+   int match;
+}my_matches;
+
 namespace ORB_SLAM2
 {
 
@@ -45,6 +65,8 @@ class Map;
 class Tracking;
 class LocalMapping;
 class LoopClosing;
+
+
 
 class System
 {
@@ -57,9 +79,12 @@ public:
     };
 
 public:
+	// Enable serialization
+	friend class boost::serialization::access;
 
     // Initialize the SLAM system. It launches the Local Mapping, Loop Closing and Viewer threads.
-    System(const string &strVocFile, const string &strSettingsFile, const eSensor sensor, const bool bUseViewer = true);
+    System(const string &strVocFile, const string &strSettingsFile, const eSensor sensor, const bool bUseViewer = true, const bool reuse= false);
+    
 
     // Proccess the given stereo frame. Images must be synchronized and rectified.
     // Input images: RGB (CV_8UC3) or grayscale (CV_8U). RGB is converted to grayscale.
@@ -90,6 +115,14 @@ public:
     // This function must be called before saving the trajectory.
     void Shutdown();
 
+	// Save / Load the current map for Mono Execution
+	void SaveMap(const string &filename);
+	void LoadMap(const string &filename);
+
+	// Get map with tracked frames and points.
+	// Call first Shutdown()
+	//Map *GetMap();
+
     // Save camera trajectory in the TUM RGB-D dataset format.
     // Call first Shutdown()
     // See format details at: http://vision.in.tum.de/data/datasets/rgbd-dataset
@@ -109,6 +142,19 @@ public:
     // TODO: Save/Load functions
     // SaveMap(const string &filename);
     // LoadMap(const string &filename);
+
+    void getMapPath(const string &filename);
+
+    std::vector<my_point> getMap(void);
+    std::vector<my_point> getCurrentMap(void);
+    std::vector<my_point> getWholeMap(void);
+    //std::vector<my_matches> getCurrentMatches(void);
+
+    int my_currentMatches(void);
+
+public:
+    std::vector<my_point> points;
+    std::vector<my_matches> matches;
 
 private:
 
@@ -156,6 +202,10 @@ private:
     std::mutex mMutexMode;
     bool mbActivateLocalizationMode;
     bool mbDeactivateLocalizationMode;
+
+    //--- Path for map 
+    string mapPath;
+
 };
 
 }// namespace ORB_SLAM

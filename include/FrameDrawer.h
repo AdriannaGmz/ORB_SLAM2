@@ -40,13 +40,15 @@ class Viewer;
 class FrameDrawer
 {
 public:
-    FrameDrawer(Map* pMap);
+    FrameDrawer(Map* pMap, bool bReuse);
 
     // Update info from the last processed frame.
     void Update(Tracking *pTracker);
 
     // Draw last processed frame.
     cv::Mat DrawFrame();
+
+    int getMymnTracked(void);
 
 protected:
 
@@ -66,6 +68,11 @@ protected:
     Map* mpMap;
 
     std::mutex mMutex;
+
+    //----para coincidencias
+    int my_mnTracked;
+
+
 };
 
 } //namespace ORB_SLAM

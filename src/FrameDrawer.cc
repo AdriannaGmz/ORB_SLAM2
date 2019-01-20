@@ -29,9 +29,16 @@
 namespace ORB_SLAM2
 {
 
-FrameDrawer::FrameDrawer(Map* pMap):mpMap(pMap)
+FrameDrawer::FrameDrawer(Map* pMap, bool bReuse):mpMap(pMap)
 {
     mState=Tracking::SYSTEM_NOT_READY;
+    if (bReuse)
+        mState=Tracking::LOST;
+
+//---------------
+    my_mnTracked = 0;
+//---------------
+
     mIm = cv::Mat(480,640,CV_8UC3, cv::Scalar(0,0,0));
 }
 
@@ -127,6 +134,11 @@ cv::Mat FrameDrawer::DrawFrame()
 
 void FrameDrawer::DrawTextInfo(cv::Mat &im, int nState, cv::Mat &imText)
 {
+
+//------
+    my_mnTracked = 0;
+//------
+
     stringstream s;
     if(nState==Tracking::NO_IMAGES_YET)
         s << " WAITING FOR IMAGES";
@@ -143,6 +155,11 @@ void FrameDrawer::DrawTextInfo(cv::Mat &im, int nState, cv::Mat &imText)
         s << "KFs: " << nKFs << ", MPs: " << nMPs << ", Matches: " << mnTracked;
         if(mnTrackedVO>0)
             s << ", + VO matches: " << mnTrackedVO;
+
+// llenando numero de correspondencias (matchs)
+        my_mnTracked = mnTracked;
+//
+
     }
     else if(nState==Tracking::LOST)
     {
@@ -197,6 +214,12 @@ void FrameDrawer::Update(Tracking *pTracker)
         }
     }
     mState=static_cast<int>(pTracker->mLastProcessedState);
+}
+
+//-----------
+int FrameDrawer::getMymnTracked(void)
+{
+	return my_mnTracked;
 }
 
 } //namespace ORB_SLAM

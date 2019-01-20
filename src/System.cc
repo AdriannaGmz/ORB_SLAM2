@@ -26,11 +26,21 @@
 #include <pangolin/pangolin.h>
 #include <iomanip>
 
+//--
+#include<mutex>
+//--
+const string my_map = "/home/robertoiv/bebop_ws/src/ORB_SLAM2/Examples/ROS/ORB_SLAM2/config/my_map.txt";
+
+bool has_suffix(const std::string &str, const std::string &suffix) {
+  std::size_t index = str.find(suffix, str.size() - suffix.size());
+  return (index != std::string::npos);
+}
+
 namespace ORB_SLAM2
 {
 
 System::System(const string &strVocFile, const string &strSettingsFile, const eSensor sensor,
-               const bool bUseViewer):mSensor(sensor),mbReset(false),mbActivateLocalizationMode(false),
+               const bool bUseViewer, const bool bReuse):mSensor(sensor),mbReset(false),mbActivateLocalizationMode(bReuse),
         mbDeactivateLocalizationMode(false)
 {
     // Output welcome message
@@ -51,18 +61,28 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
 
     //Check settings file
     cv::FileStorage fsSettings(strSettingsFile.c_str(), cv::FileStorage::READ);
+    //cv::FileStorage fsSettings("/home/robertoiv/bebop_ws/src/ORB_SLAM2/Examples/Monocular/TUM1.yaml", cv::FileStorage::READ);
     if(!fsSettings.isOpened())
     {
        cerr << "Failed to open settings file at: " << strSettingsFile << endl;
        exit(-1);
     }
+    else
+       cerr << "Success open file at: " << strSettingsFile << endl;
+
 
 
     //Load ORB Vocabulary
-    cout << endl << "Loading ORB Vocabulary. This could take a while..." << endl;
-
     mpVocabulary = new ORBVocabulary();
-    bool bVocLoad = mpVocabulary->loadFromTextFile(strVocFile);
+    cout << endl << "Loading ORB Vocabulary. This could take a while..." << endl;
+    bool bVocLoad = false; // chose loading method based on file extension
+    if (has_suffix(strVocFile, ".txt"))
+        bVocLoad = mpVocabulary->loadFromTextFile(strVocFile);
+    else
+        bVocLoad = mpVocabulary->loadFromBinaryFile(strVocFile);
+
+    
+    //bool bVocLoad = mpVocabulary->loadFromTextFile(strVocFile);
     if(!bVocLoad)
     {
         cerr << "Wrong path to vocabulary. " << endl;
@@ -70,21 +90,63 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
         exit(-1);
     }
     cout << "Vocabulary loaded!" << endl << endl;
-
     //Create KeyFrame Database
     mpKeyFrameDatabase = new KeyFrameDatabase(*mpVocabulary);
 
     //Create the Map
-    mpMap = new Map();
+    if (!bReuse)
+    {
+        mpMap = new Map();
+    }
+
+    if (bReuse)
+    {
+        getMapPath(my_map);
+        //-----------
+        //LoadMap("Slam_Map.bin");
+        LoadMap(mapPath);
+        //----------
+        //mpKeyFrameDatabase->set_vocab(mpVocabulary);
+       
+        vector<ORB_SLAM2::KeyFrame*> vpKFs = mpMap->GetAllKeyFrames();
+        for (vector<ORB_SLAM2::KeyFrame*>::iterator it = vpKFs.begin(); it != vpKFs.end(); ++it) {
+            (*it)->SetKeyFrameDatabase(mpKeyFrameDatabase);
+            (*it)->SetORBvocabulary(mpVocabulary);
+            (*it)->SetMap(mpMap);
+            (*it)->ComputeBoW();
+            mpKeyFrameDatabase->add(*it);
+            (*it)->SetMapPoints(mpMap->GetAllMapPoints());
+            (*it)->SetSpanningTree(vpKFs);
+            (*it)->SetGridParams(vpKFs);
+
+            // Reconstruct map points Observation
+
+        }
+
+        vector<ORB_SLAM2::MapPoint*> vpMPs = mpMap->GetAllMapPoints();
+        for (vector<ORB_SLAM2::MapPoint*>::iterator mit = vpMPs.begin(); mit != vpMPs.end(); ++mit) {
+            (*mit)->SetMap(mpMap);
+            (*mit)->SetObservations(vpKFs);
+
+        }
+
+        for (vector<ORB_SLAM2::KeyFrame*>::iterator it = vpKFs.begin(); it != vpKFs.end(); ++it) {
+            (*it)->UpdateConnections();
+        }
+       
+
+    }
+    cout << endl << mpMap <<" : is the created map address" << endl;
+
 
     //Create Drawers. These are used by the Viewer
-    mpFrameDrawer = new FrameDrawer(mpMap);
+    mpFrameDrawer = new FrameDrawer(mpMap, bReuse);
     mpMapDrawer = new MapDrawer(mpMap, strSettingsFile);
 
     //Initialize the Tracking thread
     //(it will live in the main thread of execution, the one that called this constructor)
     mpTracker = new Tracking(this, mpVocabulary, mpFrameDrawer, mpMapDrawer,
-                             mpMap, mpKeyFrameDatabase, strSettingsFile, mSensor);
+                             mpMap, mpKeyFrameDatabase, strSettingsFile, mSensor, bReuse);
 
     //Initialize the Local Mapping thread and launch
     mpLocalMapper = new LocalMapping(mpMap, mSensor==MONOCULAR);
@@ -95,7 +157,7 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     mptLoopClosing = new thread(&ORB_SLAM2::LoopClosing::Run, mpLoopCloser);
 
     //Initialize the Viewer thread and launch
-    mpViewer = new Viewer(this, mpFrameDrawer,mpMapDrawer,mpTracker,strSettingsFile);
+    mpViewer = new Viewer(this, mpFrameDrawer,mpMapDrawer,mpTracker,strSettingsFile, bReuse);
     if(bUseViewer)
         mptViewer = new thread(&Viewer::Run, mpViewer);
 
@@ -111,6 +173,31 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
     mpLoopCloser->SetTracker(mpTracker);
     mpLoopCloser->SetLocalMapper(mpLocalMapper);
 }
+
+//----------------------
+int System::my_currentMatches(void)
+{
+	return mpFrameDrawer->getMymnTracked();
+}
+
+void System::getMapPath(const string &filename)
+{
+    string line;
+    ifstream infile(filename);
+    
+    if(infile.is_open())
+    {
+        while(getline(infile,line))
+            mapPath = line;
+
+    }
+    else
+        mapPath = "Slam_Map.bin";
+
+    std::cout << "Map loaded: " << mapPath <<"\n";
+    
+}
+//----------------------
 
 cv::Mat System::TrackStereo(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timestamp)
 {
@@ -204,6 +291,7 @@ cv::Mat System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const doub
 
 cv::Mat System::TrackMonocular(const cv::Mat &im, const double &timestamp)
 {
+    cv::Mat Tcw;
     if(mSensor!=MONOCULAR)
     {
         cerr << "ERROR: you called TrackMonocular but input sensor was not set to Monocular." << endl;
@@ -244,7 +332,9 @@ cv::Mat System::TrackMonocular(const cv::Mat &im, const double &timestamp)
     }
     }
 
-    return mpTracker->GrabImageMonocular(im,timestamp);
+    //return (mpTracker->GrabImageMonocular(im,timestamp)).clone();
+    return (mpTracker->GrabImageMonocular(im,timestamp));
+
 }
 
 void System::ActivateLocalizationMode()
@@ -280,6 +370,39 @@ void System::Shutdown()
 
     pangolin::BindToContext("ORB-SLAM2: Map Viewer");
 }
+
+void System::LoadMap(const string &filename)
+{
+    {
+        
+        std::ifstream is(filename);
+        //std::ifstream is("/home/aldrich/bebop_ws/src/ORB_SLAM2/Examples/ROS/ORB_SLAM2/Slam_latest_Map.bin");
+
+
+        
+        boost::archive::binary_iarchive ia(is, boost::archive::no_header);
+        //ia >> mpKeyFrameDatabase;
+        ia >> mpMap;
+       
+    }
+
+    cout << endl << filename <<" : Map Loaded!" << endl;
+
+
+}
+
+void System::SaveMap(const string &filename)
+{
+    std::ofstream os(filename);
+    {
+        ::boost::archive::binary_oarchive oa(os, ::boost::archive::no_header);
+        //oa << mpKeyFrameDatabase;
+        oa << mpMap;
+    }
+    cout << endl << "Map saved to " << filename << endl;
+
+}
+
 
 void System::SaveTrajectoryTUM(const string &filename)
 {
@@ -421,6 +544,136 @@ void System::SaveTrajectoryKITTI(const string &filename)
     }
     f.close();
     cout << endl << "trajectory saved!" << endl;
+}
+
+
+std::vector<my_point> System::getMap(void)
+{
+    points.clear();
+    const vector<MapPoint*> &vpMPs = mpMap->GetAllMapPoints();
+    const vector<MapPoint*> &vpRefMPs = mpMap->GetReferenceMapPoints();    
+
+    set<MapPoint*> spRefMPs(vpRefMPs.begin(), vpRefMPs.end());
+    
+    if(vpMPs.empty())
+        return points;
+    /*
+    for(size_t i=0, iend=vpMPs.size(); i<iend;i++)
+    {
+        if(vpMPs[i]->isBad() || spRefMPs.count(vpMPs[i]))
+            continue;
+        cv::Mat pos = vpMPs[i]->GetWorldPos();
+        my_point point;
+        point.x = pos.at<float>(0);
+        point.y = pos.at<float>(1);
+        point.z = pos.at<float>(2);
+
+        points.push_back(point);  
+
+        //ROS_INFO("Map: %f, %f, %f",pos.at<float>(0),pos.at<float>(1),pos.at<float>(2));
+    
+    }
+    */
+    for(set<MapPoint*>::iterator sit=spRefMPs.begin(), send=spRefMPs.end(); sit!=send; sit++)
+    {
+
+		if((*sit)->isBad())
+			continue;
+
+        cv::Mat pos = (*sit)->GetWorldPos();
+
+        my_point point;
+        point.x = pos.at<float>(0);
+        point.y = pos.at<float>(1);
+        point.z = pos.at<float>(2);
+
+	points.push_back(point);        
+        
+    }
+
+    return points;
+
+}
+
+std::vector<my_point> System::getCurrentMap(void)
+{
+    points.clear();
+    const vector<MapPoint*> &vpMPs = mpMap->GetAllMapPoints();
+    const vector<MapPoint*> &vpRefMPs = mpMap->GetReferenceMapPoints();    
+
+    set<MapPoint*> spRefMPs(vpRefMPs.begin(), vpRefMPs.end());
+    
+    if(vpMPs.empty())
+        return points;
+    
+    for(size_t i=0, iend=vpMPs.size(); i<iend;i++)
+    {
+        if(vpMPs[i]->isBad() || spRefMPs.count(vpMPs[i]))
+            continue;
+        cv::Mat pos = vpMPs[i]->GetWorldPos();
+        my_point point;
+        point.x = pos.at<float>(0);
+        point.y = pos.at<float>(1);
+        point.z = pos.at<float>(2);
+
+        points.push_back(point);  
+
+        //ROS_INFO("Map: %f, %f, %f",pos.at<float>(0),pos.at<float>(1),pos.at<float>(2));
+    
+    }
+    
+
+    return points;
+
+}
+
+
+std::vector<my_point> System::getWholeMap(void)
+{
+    points.clear();
+    const vector<MapPoint*> &vpMPs = mpMap->GetAllMapPoints();
+    const vector<MapPoint*> &vpRefMPs = mpMap->GetReferenceMapPoints();    
+
+    set<MapPoint*> spRefMPs(vpRefMPs.begin(), vpRefMPs.end());
+    
+    if(vpMPs.empty())
+        return points;
+    
+    for(size_t i=0, iend=vpMPs.size(); i<iend;i++)
+    {
+        if(vpMPs[i]->isBad() || spRefMPs.count(vpMPs[i]))
+            continue;
+        cv::Mat pos = vpMPs[i]->GetWorldPos();
+        my_point point;
+        point.x = pos.at<float>(0);
+        point.y = pos.at<float>(1);
+        point.z = pos.at<float>(2);
+
+        points.push_back(point);  
+
+        //ROS_INFO("Map: %f, %f, %f",pos.at<float>(0),pos.at<float>(1),pos.at<float>(2));
+    
+    }
+    
+    for(set<MapPoint*>::iterator sit=spRefMPs.begin(), send=spRefMPs.end(); sit!=send; sit++)
+    {
+
+        if((*sit)->isBad())
+            continue;
+
+        cv::Mat pos = (*sit)->GetWorldPos();
+
+        my_point point;
+        point.x = pos.at<float>(0);
+        point.y = pos.at<float>(1);
+        point.z = pos.at<float>(2);
+
+    points.push_back(point);        
+        
+    }
+
+    return points;
+
 }
 
 } //namespace ORB_SLAM
