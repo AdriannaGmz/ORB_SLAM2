@@ -9,8 +9,8 @@ ENDIF()
 
 MESSAGE("Build type: " ${ROS_BUILD_TYPE})
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}  -Wall  -O3 -march=native ")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall  -O3 -march=native")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS}  -Wall  -O3 -g -march=native ")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall  -O3 -g -march=native")
 
 # Check C++11 or C++0x support
 include(CheckCXXCompilerFlag)
@@ -33,12 +33,22 @@ LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/../../../cmake_modules)
 find_package(OpenCV 2.4.3 REQUIRED)
 find_package(Eigen3 3.1.0 REQUIRED)
 find_package(Pangolin REQUIRED)
+find_package (PCL REQUIRED)
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  rospy
+  tf
+  pcl_conversions
+  pcl_ros
+)
 
 include_directories(
 ${PROJECT_SOURCE_DIR}
 ${PROJECT_SOURCE_DIR}/../../../
 ${PROJECT_SOURCE_DIR}/../../../include
 ${Pangolin_INCLUDE_DIRS}
+${catkin_INCLUDE_DIRS}
+${PCL_INCLUDE_DIRS}
 )
 
 set(LIBS 
@@ -59,6 +69,14 @@ target_link_libraries(Mono
 ${LIBS}
 )
 
+# Node for monocular camera pose
+rosbuild_add_executable(Mono2
+src/ros_mono2.cc
+)
+target_link_libraries(Mono2 
+${LIBS}
+)
+
 # Node for stereo camera
 rosbuild_add_executable(Stereo
 src/ros_stereo.cc
@@ -76,4 +94,7 @@ src/ros_rgbd.cc
 target_link_libraries(RGBD
 ${LIBS}
 )
+
+
+
 

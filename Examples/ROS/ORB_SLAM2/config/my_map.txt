@@ -1,0 +1,1 @@
+/home/robertoiv/bebop_ws/src/ORB_SLAM2/Examples/ROS/ORB_SLAM2/Slam_latest_Map.bin

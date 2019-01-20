@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<launch>
+<!-- Launch the Bebop node-->
+	<group ns="bebop">
+		<node pkg="bebop_driver" name="bebop_driver" type="bebop_driver_node" output="screen">
+			<param name="camera_info_url" value="package://bebop_driver/data/bebop_cameraCalib_opencv2.yaml" />
+			<rosparam command="load" file="$(find bebop_driver)/config/defaults.yaml" />
+		</node>
+	</group>
+
+<!-- Launch the bebop ORB-slam -->
+    <node pkg="ORB_SLAM2" type="Mono" name="orb_slam2_mono"  args="/home/robertoiv/bebop_ws/src/ORB_SLAM2/Vocabulary/ORBvoc.txt /home/robertoiv/bebop_ws/src/ORB_SLAM2/Examples/Monocular/TUM1.yaml false" cwd="node" output="screen"> 
+        <remap from="/camera/image_raw" to="/bebop/image_raw" /> 
+    </node>
+
+<!-- Launch the pose and Keyboard -->
+    <!--node name="tf_pose" pkg="tf_pose" type="tf_pose" output="screen"/-->
+    <!--node name="bebop_keyboard" pkg="bebop_driver" type="bebop_keyboard.py" required="true" output="screen"/-->
+
+
+
+</launch>
